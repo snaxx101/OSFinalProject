@@ -1,0 +1,9 @@
+[1] [2025-12-01 03:57:50] User: Hello everyone
+[1] [2025-12-01 03:58:08] User: whats happening
+[1] [2025-12-01 03:58:24] User: cat logs/chat_log.txt
+[1] [2025-12-01 03:58:53] User: yooo whats poppin
+[1] [2025-12-01 04:01:16] User: Hey wassup
+[1] [2025-12-01 04:01:23] User: Nothin much mate how about you
+[2] [2025-12-01 04:01:36] User: Yooo
+[1] [2025-12-01 04:01:48] User: Hey where did you go
+[1] [2025-12-01 04:09:34] User: Hello everyone

@@ -1,55 +1,66 @@
-#include "chat_client.h"
 #include <iostream>
-#include <unistd.h>
 #include <string>
-#include <cstring>
-#include <sys/socket.h>
+#include <thread>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#include <unistd.h>
+#include <cstring>
 
-ChatClient::ChatClient(const std::string& ip, int p) : serverIP(ip), port(p) {}
+struct ChatPacketBinary {
+    uint8_t type;
+    uint16_t groupID;
+    uint32_t timestamp;
+    char payload[256];
+};
 
-void ChatClient::start() {
-    int sock = 0;
-    struct sockaddr_in serv_addr;
-    char buffer[1024] = {0};
+// Receive thread
+void receive_messages(int sock) {
+    ChatPacketBinary bpkt;
+    while (true) {
+        int bytes_received = recv(sock, &bpkt, sizeof(bpkt), 0);
+        if (bytes_received <= 0) break;
 
-    if ((sock = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
-        std::cout << "Socket creation error" << std::endl;
-        return;
+        if (bpkt.type == 0) { // text
+            uint16_t gid = ntohs(bpkt.groupID);
+            uint32_t ts = ntohl(bpkt.timestamp);
+            std::cout << "[Group " << gid << "] " << bpkt.payload << "\n";
+        }
+    }
+}
+
+int main() {
+    int sock = socket(AF_INET, SOCK_STREAM, 0);
+    if (sock < 0) { perror("socket failed"); return 1; }
+
+    sockaddr_in server_addr{};
+    server_addr.sin_family = AF_INET;
+    server_addr.sin_port = htons(12345);
+    inet_pton(AF_INET, "127.0.0.1", &server_addr.sin_addr);
+
+    if (connect(sock, (struct sockaddr*)&server_addr, sizeof(server_addr)) < 0) {
+        perror("connect failed"); return 1;
     }
 
-    serv_addr.sin_family = AF_INET;
-    serv_addr.sin_port = htons(port);
+    std::cout << "Connected to server!\n";
 
-    if (inet_pton(AF_INET, serverIP.c_str(), &serv_addr.sin_addr) <= 0) {
-        std::cout << "Invalid address/ Address not supported" << std::endl;
-        return;
+    std::thread(receive_messages, sock).detach();
+
+    std::string msg;
+    while (true) {
+        std::getline(std::cin, msg);
+        if (msg == "/quit") break;
+
+        // Send as binary packet
+        ChatPacketBinary bpkt{};
+        bpkt.type = 0;
+        bpkt.groupID = htons(1); // default group
+        bpkt.timestamp = htonl(static_cast<uint32_t>(time(nullptr)));
+        std::memset(bpkt.payload, 0, sizeof(bpkt.payload));
+        std::strncpy(bpkt.payload, msg.c_str(), sizeof(bpkt.payload)-1);
+
+        send(sock, &bpkt, sizeof(bpkt), 0);
     }
-
-    if (connect(sock, (struct sockaddr*)&serv_addr, sizeof(serv_addr)) < 0) {
-        std::cout << "Connection failed" << std::endl;
-        return;
-    }
-
-    // 1. Enter groupID
-    std::string groupID;
-    std::cout << "Enter groupID: ";
-    std::getline(std::cin, groupID);
-    send(sock, groupID.c_str(), groupID.size(), 0);
-
-    // 2. Read recent messages from server
-    int valread = read(sock, buffer, 1024);
-    if (valread > 0) std::cout << buffer;
-
-    // 3. Send chat message
-    std::string message;
-    std::cout << "Enter message: ";
-    std::getline(std::cin, message);
-    send(sock, message.c_str(), message.size(), 0);
-
-    valread = read(sock, buffer, 1024);
-    if (valread > 0) std::cout << buffer << std::endl;
 
     close(sock);
+    return 0;
 }
