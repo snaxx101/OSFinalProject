@@ -2,8 +2,8 @@
 #define GROUP_MANAGER_H
 
 #include <unordered_map>
-#include <vector>
 #include <deque>
+#include <vector>
 #include <mutex>
 #include <chrono>
 #include "chat_packet.h"
@@ -11,24 +11,23 @@
 class GroupManager {
 private:
     struct CachedMessage {
-        ChatPacket pkt;
-        std::chrono::steady_clock::time_point timestamp;
+        ChatPacketBinary pkt;
+        std::chrono::steady_clock::time_point ts;
     };
 
     std::unordered_map<int, std::deque<CachedMessage>> groups;
-    std::unordered_map<int, size_t> maxMessagesPerGroup;
-    std::mutex group_lock;
-    std::chrono::seconds ttl = std::chrono::seconds(300); // default 5 min TTL
+    std::unordered_map<int, size_t> maxMsgs;
+    std::mutex lock;
+    std::chrono::seconds ttl{300};
 
     void evictExpired(int groupID);
 
 public:
-    void setMaxMessages(int groupID, size_t maxMsgs);
-    void addMessage(int groupID, const ChatPacket& pkt);
-    std::vector<ChatPacket> getRecent(int groupID);
-    std::vector<int> listGroups();
-
-    void setTTL(int seconds); // optional setter for TTL
+    void setMax(int groupID, size_t maxMessages);
+    void add(int groupID, const ChatPacketBinary &pkt);
+    std::vector<ChatPacketBinary> recent(int groupID);
+    std::vector<int> list();
+    void setTTL(int seconds) { ttl = std::chrono::seconds(seconds); }
 };
 
-#endif // GROUP_MANAGER_H
+#endif

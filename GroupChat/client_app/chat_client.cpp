@@ -5,60 +5,58 @@
 #include <arpa/inet.h>
 #include <unistd.h>
 #include <cstring>
+#include <ctime>
+#include "chat_packet.h"
 
-struct ChatPacketBinary {
-    uint8_t type;
-    uint16_t groupID;
-    uint32_t timestamp;
-    char payload[256];
-};
-
-// Receive thread
-void receive_messages(int sock) {
-    ChatPacketBinary bpkt;
+void receiveMessages(int sock) {
+    ChatPacketBinary pkt;
     while (true) {
-        int bytes_received = recv(sock, &bpkt, sizeof(bpkt), 0);
-        if (bytes_received <= 0) break;
-
-        if (bpkt.type == 0) { // text
-            uint16_t gid = ntohs(bpkt.groupID);
-            uint32_t ts = ntohl(bpkt.timestamp);
-            std::cout << "[Group " << gid << "] " << bpkt.payload << "\n";
-        }
+        int r = recv(sock, &pkt, sizeof(pkt), 0);
+        if (r <= 0) break;
+        std::string sender(pkt.sender);
+        std::string msg(pkt.payload, pkt.payloadLen);
+        uint16_t gid = ntohs(pkt.groupID);
+        std::cout << "[Group " << gid << "] " << sender << ": " << msg << "\n";
     }
 }
 
 int main() {
+    std::string username;
+    std::cout << "Enter your username: ";
+    std::getline(std::cin, username);
+
     int sock = socket(AF_INET, SOCK_STREAM, 0);
-    if (sock < 0) { perror("socket failed"); return 1; }
+    sockaddr_in addr{};
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons(12345);
+    inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr);
 
-    sockaddr_in server_addr{};
-    server_addr.sin_family = AF_INET;
-    server_addr.sin_port = htons(12345);
-    inet_pton(AF_INET, "127.0.0.1", &server_addr.sin_addr);
-
-    if (connect(sock, (struct sockaddr*)&server_addr, sizeof(server_addr)) < 0) {
-        perror("connect failed"); return 1;
+    if (connect(sock, (struct sockaddr*)&addr, sizeof(addr)) < 0) {
+        perror("connect"); return 1;
     }
 
-    std::cout << "Connected to server!\n";
-
-    std::thread(receive_messages, sock).detach();
+    std::thread(receiveMessages, sock).detach();
 
     std::string msg;
+    uint16_t lastGroup = 1;
+
     while (true) {
         std::getline(std::cin, msg);
         if (msg == "/quit") break;
 
-        // Send as binary packet
-        ChatPacketBinary bpkt{};
-        bpkt.type = 0;
-        bpkt.groupID = htons(1); // default group
-        bpkt.timestamp = htonl(static_cast<uint32_t>(time(nullptr)));
-        std::memset(bpkt.payload, 0, sizeof(bpkt.payload));
-        std::strncpy(bpkt.payload, msg.c_str(), sizeof(bpkt.payload)-1);
+        ChatPacketBinary pkt{};
+        if (msg.rfind("/create", 0) == 0) {
+            pkt = makePacket(PKT_CREATE_GROUP, std::stoi(msg.substr(8)), username, "");
+        } else if (msg.rfind("/join", 0) == 0) {
+            lastGroup = std::stoi(msg.substr(6));
+            pkt = makePacket(PKT_JOIN_GROUP, lastGroup, username, "");
+        } else if (msg == "/list") {
+            pkt = makePacket(PKT_LIST_GROUPS, 0, username, "");
+        } else {
+            pkt = makePacket(PKT_MESSAGE, lastGroup, username, msg);
+        }
 
-        send(sock, &bpkt, sizeof(bpkt), 0);
+        send(sock, &pkt, sizeof(pkt), 0);
     }
 
     close(sock);
